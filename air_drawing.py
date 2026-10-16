@@ -11,6 +11,13 @@ from datetime import datetime
 import cv2
 import numpy as np
 
+from sound_effects import (
+    play_button_click,
+    play_draw_start,
+    play_clear_tone,
+    play_calculate_chime,
+)
+
 
 class AirDrawer:
     """Manages virtual air drawing canvas, drawing gestures, and toolbar controls.
@@ -54,6 +61,7 @@ class AirDrawer:
         self.current_color_idx = 0
         self.brush_size_idx = 1  # default 8px
         self.is_eraser = False
+        self.was_drawing = False
 
         self.previous_point: Optional[Tuple[int, int]] = None
         self.smoothed_point: Optional[Tuple[int, int]] = None
@@ -157,7 +165,9 @@ class AirDrawer:
         self.canvas[:] = 0
         self.previous_point = None
         self.smoothed_point = None
+        self.was_drawing = False
         self._notify("Canvas Cleared")
+        play_clear_tone()
 
     def save_canvas(self, background_frame: Optional[np.ndarray] = None) -> str:
         """Saves current drawing as high-resolution PNG file into output directory."""
@@ -178,6 +188,7 @@ class AirDrawer:
 
         cv2.imwrite(filepath, save_img)
         self._notify(f"Saved: {filepath}")
+        play_calculate_chime()
         return filepath
 
     def cycle_color(self) -> None:
@@ -231,6 +242,7 @@ class AirDrawer:
         # 1. PAUSE / HOVER (Index and Middle fingers UP)
         if index_up and middle_up:
             self.previous_point = None
+            self.was_drawing = False
             # Draw cursor ring indicating hover/pause
             cv2.circle(frame, (x, y), 12, (0, 220, 255), 2, cv2.LINE_AA)
             cv2.circle(frame, (x, y), 4, (255, 255, 255), -1, cv2.LINE_AA)
@@ -243,6 +255,10 @@ class AirDrawer:
 
         # 2. DRAWING MODE (Only Index finger UP, Middle finger DOWN)
         elif index_up and not middle_up and not in_toolbar:
+            if not self.was_drawing:
+                play_draw_start()
+            self.was_drawing = True
+
             color = self.get_current_color()
             thickness = self.get_current_thickness()
 
@@ -276,6 +292,7 @@ class AirDrawer:
         # In toolbar with index up
         elif index_up and in_toolbar:
             self.previous_point = None
+            self.was_drawing = False
             cv2.circle(frame, (x, y), 9, (0, 255, 255), 2, cv2.LINE_AA)
             self._handle_toolbar_interaction(x, y, is_click=(is_pinch or (now - self.last_action_time > 0.5)))
             return "TOOLBAR"
@@ -283,6 +300,7 @@ class AirDrawer:
         else:
             self.previous_point = None
             self.smoothed_point = None
+            self.was_drawing = False
             return "STANDBY"
 
     def _handle_toolbar_interaction(self, x: int, y: int, is_click: bool = False) -> None:
@@ -294,6 +312,7 @@ class AirDrawer:
                 if is_click and (now - self.last_action_time > self.action_cooldown):
                     self.last_action_time = now
                     b_type = btn["type"]
+                    play_button_click()
 
                     if b_type == "color":
                         self.is_eraser = False
